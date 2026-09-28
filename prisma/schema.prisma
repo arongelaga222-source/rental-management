@@ -1,0 +1,191 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Represents a user of the system (staff or admin)
+model User {
+  id            Int      @id @default(autoincrement())
+  email         String   @unique
+  password      String   // hashed password
+  name          String
+  role          Role     @default(STAFF)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  // Relations
+  rentals       Rental[] @relation("createdRentals")
+  payments      Payment[] @relation("recordedPayments")
+  returns       Return[] @relation("recordedReturns")
+  auditLogs     AuditLog[] @relation("auditLogs")
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+/// Represents a customer who rents items
+model Customer {
+  id            Int      @id @default(autoincrement())
+  customerNumber String   @unique // e.g., CUS-00001
+  fullName      String
+  phone         String
+  email         String?
+  address       String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  // Relations
+  rentals       Rental[]
+  payments      Payment[] @relation("customerPayments")
+}
+
+/// Represents a category of products
+model Category {
+  id   Int      @id @default(autoincrement())
+  name String   @unique
+  // Relations
+  products Product[]
+}
+
+/// Represents a product that can be rented
+model Product {
+  id            Int      @id @default(autoincrement())
+  sku           String   @unique
+  name          String
+  description   String?
+  categoryId    Int
+  category      Category @relation(fields: [categoryId], references: [id])
+  totalQuantity Int
+  rentalPrice   Float    @default(0)
+  status        ProductStatus @default(ACTIVE)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  // Relations
+  rentalItems   RentalItem[]
+  returnItems   ReturnItem[]
+}
+
+enum ProductStatus {
+  ACTIVE
+  MAINTENANCE
+  DAMAGED
+  LOST
+  RETIRED
+}
+
+/// Represents a rental transaction
+model Rental {
+  id              Int      @id @default(autoincrement())
+  rentalNumber    String   @unique // e.g., REN-00001
+  customerId      Int
+  customer        Customer @relation(fields: [customerId], references: [id])
+  startDate       DateTime
+  endDate         DateTime
+  status          RentalStatus @default(PENDING)
+  subtotal        Float
+  discount        Float    @default(0)
+  deliveryFee     Float    @default(0)
+  depositAmount   Float    @default(0)
+  totalAmount     Float
+  amountPaid      Float    @default(0)
+  balance         Float    @default(0)
+  notes           String?
+  createdById     Int
+  createdBy       User    @relation("createdRentals", fields: [createdById], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  // Relations
+  rentalItems     RentalItem[]
+  payments        Payment[] @relation("rentalPayments")
+  returns         Return[] @relation("rentalReturns")
+}
+
+enum RentalStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  OUT_FOR_DELIVERY
+  ACTIVE
+  RETURNED
+  COMPLETED
+  CANCELLED
+  OVERDUE
+}
+
+/// Represents an item within a rental
+model RentalItem {
+  id        Int      @id @default(autoincrement())
+  rentalId  Int
+  rental    Rental   @relation(fields: [rentalId], references: [id])
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id])
+  quantity  Int
+  unitPrice Float    // price at the time of rental
+  subtotal  Float
+}
+
+/// Represents a payment made towards a rental
+model Payment {
+  id            Int      @id @default(autoincrement())
+  rentalId      Int
+  rental        Rental   @relation("rentalPayments", fields: [rentalId], references: [id])
+  customerId    Int
+  customer      Customer @relation("customerPayments", fields: [customerId], references: [id])
+  amount        Float
+  paymentDate   DateTime @default(now())
+  paymentMethod PaymentMethod
+  referenceNumber String? // e.g., check number, transaction ID
+  notes         String?
+  recordedById  Int
+  recordedBy    User    @relation("recordedPayments", fields: [recordedById], references: [id])
+  createdAt     DateTime @default(now())
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  E_WALLET
+  OTHER
+}
+
+/// Represents a return of items for a rental
+model Return {
+  id            Int      @id @default(autoincrement())
+  rentalId      Int
+  rental        Rental   @relation("rentalReturns", fields: [rentalId], references: [id])
+  returnDate    DateTime @default(now())
+  notes         String?
+  recordedById  Int
+  recordedBy    User    @relation("recordedReturns", fields: [recordedById], references: [id])
+  createdAt     DateTime @default(now())
+  // Relations
+  returnItems   ReturnItem[]
+}
+
+/// Represents an item within a return
+model ReturnItem {
+  id          Int      @id @default(autoincrement())
+  returnId    Int
+  return      Return   @relation(fields: [returnId], references: [id])
+  productId   Int
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int      // quantity returned
+  damagedQuantity Int   @default(0)
+  missingQuantity Int   @default(0)
+  // Notes: the quantity that is returned in good condition is (quantity - damagedQuantity - missingQuantity)
+}
+
+/// Represents an audit log entry for important actions
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String   // e.g., "RENTAL_CONFIRMED", "CUSTOMER_CREATED"
+  performedById Int
+  performedBy User   @relation("auditLogs", fields: [performedById], references: [id])
+  details   Json?    // optional JSON details
+  createdAt DateTime @default(now())
+}
